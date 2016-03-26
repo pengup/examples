@@ -1,0 +1,12 @@
+object Main {
+  def isSorted[A] (as: Array[A], sorted: (A,A) => Boolean)= {
+    @tailrec def sort(i: Int) : Boolean = { 
+      if (i >= as.size)
+        true
+      else if (sorted(as(i), as(i+1)))
+          sort(i+1)
+      else false
+    }    
+    sort(0)
+  }
+}
