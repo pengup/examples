@@ -1,0 +1,4 @@
+**/*.class
+scala/*.class
+target
+project
