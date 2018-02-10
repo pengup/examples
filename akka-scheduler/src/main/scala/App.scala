@@ -12,6 +12,8 @@ object Main extends App {
 
   val system = ActorSystem("FunSystem")
   implicit val executionContext = system.dispatchers.lookup("my-dispatcher")
+  //implicit val executionContext = system.dispatchers.defaultGlobalDispatcher
+  //println(config.getObject("akka.actor.default-dispatcher"))
 
   system.scheduler.schedule(
     1 second,
