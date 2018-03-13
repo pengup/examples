@@ -1,5 +1,4 @@
 **/*.class
 scala/*.class
-.idea
 target
-
+project
