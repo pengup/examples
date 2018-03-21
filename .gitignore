@@ -2,4 +2,6 @@
 scala/*.class
 .idea
 target
+*.iml
+
 
