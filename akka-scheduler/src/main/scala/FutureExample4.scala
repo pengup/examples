@@ -15,6 +15,7 @@ object FutureExample4 extends App {
 
   logStatus("start")
 
+  // Check onComplete when while(true) is mistakenly used. Anyway, do not use while(true)
   while(true) {
     doStepOne onComplete { x =>
       logStatus(s"$x-end")

@@ -4,7 +4,7 @@ import scala.concurrent.duration._
 import scala.concurrent.Future
 import com.typesafe.config.ConfigFactory
 
-object FutureExample5 extends App {
+object FutureExampleFallback extends App {
   val config = ConfigFactory.load()
 
   val runTime = Runtime.getRuntime()
@@ -16,7 +16,8 @@ object FutureExample5 extends App {
   logStatus("start")
 
 
-  //https://doc.akka.io/docs/akka/2.5/futures.html#auxiliary-methods
+  // https://doc.akka.io/docs/akka/2.5/futures.html#auxiliary-methods
+  // Result: All fallBack functions will be called, but only the first successful will be returned !!!
   val result = doStepOne fallbackTo doFallback1() fallbackTo doFallback2()
   result foreach println
 

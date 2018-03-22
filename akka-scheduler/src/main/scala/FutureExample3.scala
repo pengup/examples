@@ -16,6 +16,10 @@ object FutureExample3 extends App {
   logStatus("start")
 
 
+  // doStepOne triggers a number of Future, so
+  // check if onComplete happens after underlying Futures finishes
+  // the answer is Yes (at least to multiples runs that I see).
+  // This could be checked more
   doStepOne onComplete { x =>
     logStatus(s"$x-end")
   }
