@@ -16,7 +16,7 @@
 						"exactMatch": "http"
 					},
 					"query": {
-						"exactMatch": ""
+						"regexMatch": "id=.*"
 					},
 					"body": {
 						"exactMatch": ""
@@ -24,7 +24,7 @@
 				},
 				"response": {
 					"status": 200,
-					"body": "{\n  \"id\": 1,\n  \"title\": \"json-server\",\n  \"author\": \"typicode\"\n}",
+					"body": "{\n  \"id\": {{ Request.Path.[1] }},\n  \"title\": \"json-server\",\n  \"author\": \"typicode\"\n}",
 					"encodedBody": false,
 					"headers": {
 						"Access-Control-Allow-Credentials": [
@@ -67,7 +67,7 @@
 							"Express"
 						]
 					},
-					"templated": false
+					"templated": true
 				}
 			}
 		],
