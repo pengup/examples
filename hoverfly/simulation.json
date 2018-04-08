@@ -16,7 +16,7 @@
 						"exactMatch": "http"
 					},
 					"query": {
-						"regexMatch": "id=.*"
+						"exactMatch": ""
 					},
 					"body": {
 						"exactMatch": ""
