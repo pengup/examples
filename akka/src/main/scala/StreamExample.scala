@@ -19,26 +19,48 @@ object StreamExample extends App {
   implicit val system = ActorSystem("QuickStart")
   implicit val materializer = ActorMaterializer()
 
-  val source: Source[Int, NotUsed] = Source(1 to 3)
-  source.runForeach(i ⇒ println(i))(materializer)
+  def testOne = {
+    val source: Source[Int, NotUsed] = Source(1 to 3)
+    source.runForeach(i ⇒ println(i))(materializer)
 
-  val factorials = source.scan(BigInt(1))((acc, next) ⇒ acc * next)
+    val factorials = source.scan(BigInt(1))((acc, next) ⇒ acc * next)
 
-  val result: Future[IOResult] =
-    factorials
-      .map(num ⇒ ByteString(s"$num\n"))
-      .runWith(FileIO.toPath(Paths.get("factorials.txt")))
+    val result: Future[IOResult] =
+      factorials
+        .map(num ⇒ ByteString(s"$num\n"))
+        .runWith(FileIO.toPath(Paths.get("factorials.txt")))
 
-  def lineSink(filename: String): Sink[String, Future[IOResult]] =
-    Flow[String]
-      .map(s ⇒ ByteString(s + "\n"))
-      .toMat(FileIO.toPath(Paths.get(filename)))(Keep.right)
+    def lineSink(filename: String): Sink[String, Future[IOResult]] =
+      Flow[String]
+        .map(s ⇒ ByteString(s + "\n"))
+        .toMat(FileIO.toPath(Paths.get(filename)))(Keep.right)
 
-  factorials.map(_.toString).runWith(lineSink("factorial2.txt"))
+    factorials.map(_.toString).runWith(lineSink("factorial2.txt"))
+  }
 
-  val tick: Source[Int, Cancellable] = Source.tick(0.seconds, 1.seconds, 1)
-  source.runForeach(println)
+  def testSourceTick = {
+    val tick: Source[Int, Cancellable] = Source.tick(0.seconds, 5.seconds, 1)
+    tick.runForeach(println)
+  }
 
+  def testSourceRepeat = {
+    val tick: Source[String, NotUsed] = Source.repeat("test")
+    tick.runForeach(println)
+  }
+
+  def testBackPressure = {
+    def slowComputation(i:Int) = {
+      Thread.sleep(1000)
+      i
+    }
+    val source: Source[Int, NotUsed] = Source(1 to 10)
+    source.buffer(1, OverflowStrategy.dropHead)
+      .map(slowComputation)
+      .runForeach(println)
+
+  }
+
+  testBackPressure
 
 }
 
