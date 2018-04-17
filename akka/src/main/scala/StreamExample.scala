@@ -9,6 +9,7 @@ import com.typesafe.config.ConfigFactory
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object StreamExample extends App {
   val config = ConfigFactory.load()
@@ -60,7 +61,59 @@ object StreamExample extends App {
 
   }
 
-  testBackPressure
+  def testFuture = {
+    def doWork: Future[Int] = Future {
+      Thread.sleep(1000)
+      100
+    }
+    Source.fromFuture(doWork)
+      .runForeach(x => println("Future " + x))
+  }
+
+  // Materialize by Source runWith
+  def testRunWith = {
+    val source = Source(1 to 10)
+    val sink = Sink.fold[Int, Int](0)(_ + _)
+
+    // materialize the flow, getting the Sinks materialized value
+    val sum: Future[Int] = source.runWith(sink)
+    println(sum)
+  }
+
+
+  def testGraph = {
+    // connect the Source to the Sink, obtaining a RunnableGraph
+    val sink = Sink.fold[Int, Int](0)(_ + _)
+    val runnable: RunnableGraph[Future[Int]] =
+      Source(1 to 10).toMat(sink)(Keep.right)
+
+    // get the materialized value of the FoldSink
+    val sum1: Future[Int] = runnable.run()
+    val sum2: Future[Int] = runnable.run()
+
+    // sum1 and sum2 are different Futures!
+  }
+
+  def testSourceToSink = {
+    // Explicitly creating and wiring up a Source, Sink and Flow
+    val graph: RunnableGraph[NotUsed] = Source(1 to 6).via(Flow[Int].map(_ * 2)).to(Sink.foreach(println(_)))
+
+    // Starting from a Source
+    val source = Source(1 to 6).map(_ * 2)
+    val graph1: RunnableGraph[NotUsed] = source.to(Sink.foreach(println(_)))
+
+    // Starting from a Sink
+    val sink: Sink[Int, NotUsed] = Flow[Int].map(_ * 2).to(Sink.foreach(println(_)))
+    Source(1 to 6).to(sink)
+
+    // Broadcast to a sink inline
+    val otherSink: Sink[Int, NotUsed] =
+      Flow[Int].alsoTo(Sink.foreach(println(_))).to(Sink.ignore)
+    Source(1 to 6).to(otherSink)
+  }
+
+
+  testSourceToSink
 
 }
 
