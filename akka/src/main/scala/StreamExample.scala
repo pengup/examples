@@ -1,12 +1,13 @@
 import java.nio.file.Paths
 
 import akka.NotUsed
-import akka.actor.{ActorSystem, Cancellable}
+import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
 import akka.stream._
-import akka.stream.scaladsl._
+import akka.stream.scaladsl.{Flow, _}
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 
+import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -70,6 +71,19 @@ object StreamExample extends App {
       .runForeach(x => println("Future " + x))
   }
 
+
+  def testFuture2 = {
+    val source = Source(1 to 10)
+
+    // Using Future will not ensure the order then
+    def output(i: Int) = Future {
+      Thread.sleep(1000)
+      println(i)
+    }
+
+    source.runForeach(output)
+  }
+
   // Materialize by Source runWith
   def testRunWith = {
     val source = Source(1 to 10)
@@ -112,8 +126,97 @@ object StreamExample extends App {
     Source(1 to 6).to(otherSink)
   }
 
+  def testMapAsync = {
+    val system = ActorSystem("FunSystem")
+    val executionContext = system.dispatchers.lookup("blocking-dispatcher")
 
-  testSourceToSink
+    val source = Source(1 to 10)
+
+    // Use a separate execution context for a future
+    def wait(i: Int) =  Future {
+      Thread.sleep(1000)
+      i
+    }(executionContext)
+
+    // mapAsync
+    val next = source.mapAsync(3)(i => wait(i))
+
+    val sink: RunnableGraph[NotUsed] =
+      next.map(println).to(Sink.ignore)
+
+    sink.run()
+  }
+
+
+  def testOverflowNotWorking = {
+    val source = Source(1 to 10)
+
+    // This will never overflow because source is created by stream, which has back pressure in place
+    source.buffer(1, OverflowStrategy.dropNew)
+
+    def wait(i: Int): Int =  {
+      Thread.sleep(1000)
+      i
+    }
+
+    val process: Flow[Int, Int, NotUsed] =  Flow[Int].map(wait)
+
+    val sink = Flow[Int].to(Sink.foreach(println))
+
+    source.via(process).to(sink).run()
+
+  }
+
+  def testOverflow = {
+    def wait(i: Int) =  {
+      Thread.sleep(1000)
+      println(i)
+    }
+
+    val source = Source.actorRef[Int](1, OverflowStrategy.dropNew)
+
+    // ref is only avaialbe after run, i.e., materialized
+    val ref = Flow[Int].to(Sink.foreach(wait)).runWith(source)
+
+    (1 to 10) map {i =>
+      ref ! i
+    }
+
+  }
+
+  def testActor = {
+    def wait(i: Int) =  {
+      Thread.sleep(1000)
+      println(i)
+    }
+
+    val source = Source(1 to 10)
+    source.buffer(1, OverflowStrategy.dropNew)
+
+    import scala.concurrent.duration._
+    import akka.util.Timeout
+
+    implicit val duration: Timeout = 20 seconds
+
+    val dstRef = system.actorOf(Props(new DestActor), name = "dst")
+
+    source.ask[Int](parallelism = 5)(dstRef)
+      // continue processing of the replies from the actor
+      .runWith(Sink.foreach(wait))
+
+  }
+
+  testActor
+
+
+  class DestActor extends Actor {
+    def receive = {
+      case i: Int =>
+        sender() ! i
+
+    }
+  }
+  
 
 }
 
