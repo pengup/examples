@@ -1,5 +1,8 @@
+package ch2
+
 import scala.annotation.tailrec
-object Main {
+
+object Main21 {
   def fab(n: Int): Int = {
     n match {
       case x if x<0 => 0 
