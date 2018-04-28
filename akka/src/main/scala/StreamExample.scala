@@ -153,7 +153,7 @@ object StreamExample extends App {
   def testOverflowNotWorking = {
     val source = Source(1 to 10)
 
-    // This will never overflow because source is created by stream, which has back pressure in place
+    // TIP: This will never overflow because source is created by stream, which has back pressure in place
     source.buffer(1, OverflowStrategy.dropNew)
 
     def wait(i: Int): Int =  {
@@ -177,7 +177,10 @@ object StreamExample extends App {
 
     val source = Source.actorRef[Int](1, OverflowStrategy.dropNew)
 
-    // ref is only avaialbe after run, i.e., materialized
+    // TIP: messages are generated outside of the stream from an actor, thus
+    // Stream.Source has no back pressure back to the actor, thus
+    // OverflowStrategy here will take effect in this case
+    // Note: ref is only avaialbe after run, i.e., materialized
     val ref = Flow[Int].to(Sink.foreach(wait)).runWith(source)
 
     (1 to 10) map {i =>
@@ -187,11 +190,7 @@ object StreamExample extends App {
   }
 
   def testActor = {
-    def wait(i: Int) =  {
-      Thread.sleep(1000)
-      println(i)
-    }
-
+    // Again, overflow will not happen because the back pressure take effect
     val source = Source(1 to 10)
     source.buffer(1, OverflowStrategy.dropNew)
 
@@ -211,9 +210,10 @@ object StreamExample extends App {
 
     val dstRef = system.actorOf(Props(new DestActor), name = "dst")
 
+    // TIP: In a stream, sending messages to an actor, and wait for the reply message
     source.ask[Int](parallelism = 5)(dstRef)
       // continue processing of the replies from the actor
-      .runWith(Sink.foreach(wait))
+      .runWith(Sink.foreach(println))
 
   }
 
@@ -238,8 +238,9 @@ object StreamExample extends App {
       ).runWith(Sink.ignore)
   }
 
-  def testLogging = {
+  def testDebug = {
     val source = Source(1 to 3)
+    // TIP: One way for debugging/logging is simply using `map` and println
     source.map{ i =>
       println(i)
       i
@@ -277,14 +278,14 @@ object StreamExample extends App {
     val source = Source(1 to 3)
 
     logThread("start")
-    // The stream is run in an actor with a different thread
+    // TIP: The stream is run in an actor with a different thread
     source.map(i => {
         logThread("stream map: " + i)
         i
       }
     ).runForeach(i => println("stream run " + i))
 
-    // This may be printed before logs in stream because Stream is run in a different actor
+    // TIP: This may be printed before logs in stream because Stream is run in a different actor
     Thread.sleep(Random.nextInt(100))
     logThread("end")
   }
@@ -295,7 +296,7 @@ object StreamExample extends App {
     println(s"Step $step Current time $timestamp and thread ID $threadId ")
   }
 
-  testStreamOrder
+  testActor
 
 
 }
