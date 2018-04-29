@@ -1,6 +1,6 @@
 import java.nio.file.Paths
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.{Actor, ActorSystem, Cancellable, Props}
 import akka.event.Logging
 import akka.stream._
@@ -12,7 +12,7 @@ import com.typesafe.config.ConfigFactory
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Failure, Random, Success}
 
 object StreamExample extends App {
   val config = ConfigFactory.load()
@@ -296,8 +296,55 @@ object StreamExample extends App {
     println(s"Step $step Current time $timestamp and thread ID $threadId ")
   }
 
-  testActor
 
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKeepRight = {
+    val helloWorldStream: RunnableGraph[Future[Done]] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .toMat(Sink.foreach(println))(Keep.right)
+
+    val doneF: Future[Done] = helloWorldStream.run()
+    doneF.onComplete {
+      case Success(Done) =>
+        println("Stream finished successfully.")
+      case Failure(e) =>
+        println(s"Stream failed with $e")
+    }
+
+    // TIP: This will print out first before "HELLO WORLD"
+    println("step ")
+  }
+
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKeepLeft = {
+    val helloWorldStream: RunnableGraph[NotUsed] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .toMat(Sink.foreach(println))(Keep.left)
+
+    val result: NotUsed = helloWorldStream.run()
+
+    println("Not used: " + result) // This print Not used: NotUsed
+    println("step ")
+  }
+
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKillSwitch = {
+    val helloWorldStream: RunnableGraph[(UniqueKillSwitch, Future[Done])] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .viaMat(KillSwitches.single)(Keep.right)
+        .toMat(Sink.foreach(println))(Keep.both)
+
+    val (killSwitch, doneF): (UniqueKillSwitch, Future[Done]) =
+      helloWorldStream.run()
+
+    Thread.sleep(10000)
+    killSwitch.shutdown()
+  }
+
+  testKillSwitch
 
 }
 
