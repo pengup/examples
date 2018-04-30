@@ -128,7 +128,7 @@ object StreamExample extends App {
     Source(1 to 6).to(otherSink)
   }
 
-  def testMapAsync = {
+  def testAsync = {
     val system = ActorSystem("FunSystem")
     val executionContext = system.dispatchers.lookup("blocking-dispatcher")
 
@@ -147,6 +147,24 @@ object StreamExample extends App {
       next.map(println).to(Sink.ignore)
 
     sink.run()
+  }
+
+
+  def testAsync2 = {
+
+    // TIP: Async writing in a different dispatcher
+    val dbFun = Flow[Int].map { i =>
+      println(s"step $i")
+      i
+    }.addAttributes(ActorAttributes.dispatcher("blocking-dispatcher"))
+      .async
+
+    val source = Source(1 to 10)
+    source
+      .via(dbFun)
+      .to(Sink.ignore)
+      .run()
+
   }
 
 
@@ -344,7 +362,12 @@ object StreamExample extends App {
     killSwitch.shutdown()
   }
 
-  testKillSwitch
+  def testMapConcat = {
+    val source = Source(List(List(1, 2), List(2), List(3)))
+    source.mapConcat(x => x).runForeach(println)
+  }
+
+  testMapConcat
 
 }
 
