@@ -1,16 +1,18 @@
 import java.nio.file.Paths
 
-import akka.NotUsed
-import akka.actor.{Actor, ActorRef, ActorSystem, Cancellable, Props}
+import akka.{Done, NotUsed}
+import akka.actor.{Actor, ActorSystem, Cancellable, Props}
+import akka.event.Logging
 import akka.stream._
+import akka.stream.scaladsl.Tcp.ServerBinding
 import akka.stream.scaladsl.{Flow, _}
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 
-import scala.collection.mutable
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Random, Success}
 
 object StreamExample extends App {
   val config = ConfigFactory.load()
@@ -151,7 +153,7 @@ object StreamExample extends App {
   def testOverflowNotWorking = {
     val source = Source(1 to 10)
 
-    // This will never overflow because source is created by stream, which has back pressure in place
+    // TIP: This will never overflow because source is created by stream, which has back pressure in place
     source.buffer(1, OverflowStrategy.dropNew)
 
     def wait(i: Int): Int =  {
@@ -175,7 +177,10 @@ object StreamExample extends App {
 
     val source = Source.actorRef[Int](1, OverflowStrategy.dropNew)
 
-    // ref is only avaialbe after run, i.e., materialized
+    // TIP: messages are generated outside of the stream from an actor, thus
+    // Stream.Source has no back pressure back to the actor, thus
+    // OverflowStrategy here will take effect in this case
+    // Note: ref is only avaialbe after run, i.e., materialized
     val ref = Flow[Int].to(Sink.foreach(wait)).runWith(source)
 
     (1 to 10) map {i =>
@@ -185,38 +190,161 @@ object StreamExample extends App {
   }
 
   def testActor = {
-    def wait(i: Int) =  {
-      Thread.sleep(1000)
-      println(i)
-    }
-
+    // Again, overflow will not happen because the back pressure take effect
     val source = Source(1 to 10)
     source.buffer(1, OverflowStrategy.dropNew)
 
-    import scala.concurrent.duration._
     import akka.util.Timeout
+
+    import scala.concurrent.duration._
 
     implicit val duration: Timeout = 20 seconds
 
+    class DestActor extends Actor {
+      def receive = {
+        case i: Int =>
+          sender() ! i
+
+      }
+    }
+
     val dstRef = system.actorOf(Props(new DestActor), name = "dst")
 
+    // TIP: In a stream, sending messages to an actor, and wait for the reply message
     source.ask[Int](parallelism = 5)(dstRef)
       // continue processing of the replies from the actor
-      .runWith(Sink.foreach(wait))
+      .runWith(Sink.foreach(println))
 
   }
 
-  testActor
+  def testLog = {
+    Source(-5 to 5)
+      .map(1 / _) //throwing ArithmeticException: / by zero
+      .log("error logging")
+      .runWith(Sink.ignore)
+
+  }
+
+  def testLog2 = {
+    Source(-5 to 5)
+      .map(1 / _) //throwing ArithmeticException: / by zero
+      .log("logging")
+      .withAttributes(
+        Attributes.logLevels(
+          onElement = Logging.InfoLevel,
+          onFinish = Logging.InfoLevel,
+          onFailure = Logging.ErrorLevel // Logging.InfoLevel here will not log the exception? This seems a bug
+        )
+      ).runWith(Sink.ignore)
+  }
+
+  def testDebug = {
+    val source = Source(1 to 3)
+    // TIP: One way for debugging/logging is simply using `map` and println
+    source.map{ i =>
+      println(i)
+      i
+    }.runWith(Sink.ignore)
+
+  }
+
+  def testRecover = {
+    Source(0 to 6).map(n ⇒
+      if (n < 5) n.toString
+      else throw new RuntimeException("Boom!")
+    ).recover {
+      case _: RuntimeException ⇒ "stream truncated"
+    }.runForeach(println)
+  }
+
+  def testRecoverWithRetries = {
+    val planB = Source(List("five", "six", "seven", "eight"))
+
+    Source(0 to 6).map(n ⇒
+      if (n < 5) n.toString
+      else throw new RuntimeException("Boom!")
+    ).recoverWithRetries(attempts = 1, {
+      case _: RuntimeException ⇒ planB
+    }).runForeach(println)
+  }
+
+  def testBind = {
+    val binding: Future[ServerBinding] =
+      Tcp().bind("127.0.0.1", 8888).to(Sink.foreach(println)).run()
+
+  }
+
+  def testStreamOrder = {
+    val source = Source(1 to 3)
+
+    logThread("start")
+    // TIP: The stream is run in an actor with a different thread
+    source.map(i => {
+        logThread("stream map: " + i)
+        i
+      }
+    ).runForeach(i => println("stream run " + i))
+
+    // TIP: This may be printed before logs in stream because Stream is run in a different actor
+    Thread.sleep(Random.nextInt(100))
+    logThread("end")
+  }
+
+  def logThread(step: String): Unit = {
+    val timestamp: Long = System.currentTimeMillis / 1000
+    val threadId = Thread.currentThread().getId()
+    println(s"Step $step Current time $timestamp and thread ID $threadId ")
+  }
 
 
-  class DestActor extends Actor {
-    def receive = {
-      case i: Int =>
-        sender() ! i
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKeepRight = {
+    val helloWorldStream: RunnableGraph[Future[Done]] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .toMat(Sink.foreach(println))(Keep.right)
 
+    val doneF: Future[Done] = helloWorldStream.run()
+    doneF.onComplete {
+      case Success(Done) =>
+        println("Stream finished successfully.")
+      case Failure(e) =>
+        println(s"Stream failed with $e")
     }
+
+    // TIP: This will print out first before "HELLO WORLD"
+    println("step ")
   }
-  
+
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKeepLeft = {
+    val helloWorldStream: RunnableGraph[NotUsed] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .toMat(Sink.foreach(println))(Keep.left)
+
+    val result: NotUsed = helloWorldStream.run()
+
+    println("Not used: " + result) // This print Not used: NotUsed
+    println("step ")
+  }
+
+  // Example from https://ivanyu.me/blog/2016/12/12/about-akka-streams/
+  def testKillSwitch = {
+    val helloWorldStream: RunnableGraph[(UniqueKillSwitch, Future[Done])] =
+      Source.single("Hello world")
+        .map(s => s.toUpperCase())
+        .viaMat(KillSwitches.single)(Keep.right)
+        .toMat(Sink.foreach(println))(Keep.both)
+
+    val (killSwitch, doneF): (UniqueKillSwitch, Future[Done]) =
+      helloWorldStream.run()
+
+    Thread.sleep(10000)
+    killSwitch.shutdown()
+  }
+
+  testKillSwitch
 
 }
 
