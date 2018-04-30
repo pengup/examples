@@ -13,14 +13,14 @@ object ForExample extends App {
   val system = ActorSystem("FunSystem")
   implicit val executionContext = system.dispatchers.lookup("my-dispatcher")
 
-
+  // TIP: This print 1,2,3 in sequence order because For comprehension is actually using flatMap
+  // although each steop has separate Future, they will be run in same thread
   val result = for (
     i <- doStepOne;
     j <- doStepTwo;
     k <- doStepThree
   ) yield (i, j, k)
 
-  // TIP: This print 1,2,3 in sequence order because For comprehension is actually using flatMap
   result map {
     i => println(s"$i " + i._1 + i._2)
   }
