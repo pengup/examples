@@ -276,12 +276,20 @@ object StreamExample extends App {
   }
 
   def testRecoverWithRetries = {
-    val planB = Source(List("five", "six", "seven", "eight"))
+    val planB = Source(List("five", "six", "seven", "eight")).map(n =>  {
+        println(n)
+        throw new RuntimeException(s"Boom! $n")
+      }
+    )
 
+    // This will print 3 times "five" because attemps = 3
     Source(0 to 6).map(n ⇒
       if (n < 5) n.toString
-      else throw new RuntimeException("Boom!")
-    ).recoverWithRetries(attempts = 1, {
+      else {
+        println(s"number $n")
+        throw new RuntimeException("Boom!")
+      }
+    ).recoverWithRetries(attempts = 3, {
       case _: RuntimeException ⇒ planB
     }).runForeach(println)
   }
@@ -367,7 +375,7 @@ object StreamExample extends App {
     source.mapConcat(x => x).runForeach(println)
   }
 
-  testMapConcat
+  testRecoverWithRetries
 
 }
 
